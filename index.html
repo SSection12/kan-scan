@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kanagawa-Ikka Affiliations Scanner</title>
+    <style>
+        body { background: #1a1c1e; color: white; font-family: 'Segoe UI', sans-serif; display: flex; justify-content: center; padding: 50px; }
+        .card { background: #2c2f33; padding: 25px; border-radius: 15px; width: 420px; border-top: 5px solid #a5f2f3; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+        h2 { color: #a5f2f3; text-align: center; font-variant: small-caps; margin-top: 0; }
+
+        .instructions {
+            background: #24272b;
+            border-left: 4px solid #a5f2f3;
+            padding: 12px 14px;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            line-height: 1.5;
+            margin-bottom: 15px;
+            color: #d6d6d6;
+        }
+        .instructions strong { color: #ffffff; }
+
+        input { width: 100%; padding: 12px; margin: 10px 0; border: none; border-radius: 5px; box-sizing: border-box; background: #3b3e44; color: white; outline: none; }
+        button { width: 100%; padding: 12px; background: #a5f2f3; border: none; border-radius: 5px; font-weight: bold; cursor: pointer; color: #1a1c1e; transition: 0.3s; }
+        button:hover { background: #ffffff; }
+        #results { margin-top: 20px; }
+
+        .group-item { background: #36393f; padding: 15px; border-radius: 8px; margin-bottom: 12px; }
+        .group-name { color: #a5f2f3; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 1px; }
+        .rank { color: #ffffff; font-weight: bold; display: block; font-size: 1.1rem; }
+
+        .ally { border-left: 5px solid #43b581; }
+        .neutral { border-left: 5px solid #00bfff; }
+        .opps { border-left: 5px solid #ff4b4b; }
+
+        .status-label { font-size: 0.7rem; font-weight: bold; padding: 2px 6px; border-radius: 3px; float: right; text-transform: uppercase; }
+        .label-ally { background: #43b581; color: white; }
+        .label-neutral { background: #00bfff; color: white; }
+        .label-opps { background: #ff4b4b; color: white; }
+
+        .error { color: #ff4b4b; text-align: center; }
+    </style>
+</head>
+<body>
+
+<div class="card">
+    <h2>Kanagawa-Ikka Affiliations Scanner</h2>
+
+    <div class="instructions">
+        <strong>How to use:</strong><br>
+        • Enter a <strong>Roblox username</strong> or <strong>UserId</strong><br>
+        • Click <strong>Scan Affiliations</strong><br>
+        • The scanner checks database for affiliations<br><br>
+
+        <strong>Notes:</strong><br>
+        • Roblox.com requests are rate-limited.<br>
+        • Rate Limits waiting time will be 1-15 Minutes depending on traffic.<br>
+        • This tool is only made to help, not to replace manual checks.<br>
+        <h6>Contact ArataFuyukawa (section12) on discord for questions. Last update: 1/21/2026</h6>
+    </div>
+
+    <input type="text" id="username" placeholder="Enter Roblox Username or UserId">
+    <button onclick="checkUser()" id="checkBtn">Scan Affiliations</button>
+    <div id="results"></div>
+</div>
+
+<script>
+/* ===== GLOBAL ERROR HANDLER ===== */
+window.onerror = function (message, source, lineno, colno) {
+    const results = document.getElementById("results");
+    if (results) {
+        results.innerHTML = `
+            <p class="error">
+                Code ERROR (${lineno}:${colno}). Contact ArataFuyukawa.
+            </p>
+        `;
+    }
+    return true; // prevent default browser error popup
+};
+
+window.onunhandledrejection = function (event) {
+    const results = document.getElementById("results");
+    if (results) {
+        results.innerHTML = `
+            <p class="error">
+                Code ERROR (PROMISE). Contact ArataFuyukawa.
+            </p>
+        `;
+    }
+};
+</script>
+
+
+<script>
+
+/*
+This app checks Roblox group affiliations using a Cloudflare Worker
+that handles caching, rate limiting, and Roblox API access.
+Do not abuse or commercialize.
+Contact ArataFuyukawa (section12) on discord for questions.
+*/
+
+const ALLIES = { 
+    "78749178": "Kanagawa-ikka",
+    "35766674": "村山一家 Murayama - Ikka",
+    "13445787": "United Federation / Calamity",
+    "659233359": "Chasers"
+};
+
+const NEUTRAL = { 
+    "13835630": "Ikeda-ikka",
+    "2727257": "Hydra-Bratva",
+    "957196347": "Kozakura-ikka",
+    "953286501": "Tachibana Kai 橘会"
+};
+
+const OPPS = { 
+    "35488582": "Enomoto-ikka",
+    "1051291555": "Chosen devils",
+    "777386797": "Sanada-ikka",
+    "12739645": "NOLA"
+};
+
+const PROXY_URL = "https://roblox-proxy.moh-section12.workers.dev";
+const COOLDOWN_MS = 5000;
+let lastScan = 0;
+
+function showError(msg) {
+    document.getElementById('results').innerHTML = `<p class="error">${msg}</p>`;
+}
+
+async function safeFetch(url) {
+    const res = await fetch(url);
+    if (!res.ok) {
+        if (res.status === 429) throw { type: "RATE_LIMIT" };
+        throw { type: "HTTP" };
+    }
+    return res.json();
+}
+
+async function checkUser() {
+    if (Date.now() - lastScan < COOLDOWN_MS) {
+        return showError("Slow down. Try again in a few seconds.");
+    }
+    lastScan = Date.now();
+
+    const input = document.getElementById('username').value.trim();
+    const results = document.getElementById('results');
+    const btn = document.getElementById('checkBtn');
+
+    if (!input) return showError("Enter a username or userId.");
+
+    btn.disabled = true;
+    results.textContent = "Scanning...";
+
+    try {
+        const data = await safeFetch(`${PROXY_URL}/?target=${encodeURIComponent(input)}`);
+        let html = "";
+
+        for (const item of data.data || []) {
+            const gid = String(item.group.id);
+            let label, css, name;
+
+            if (ALLIES[gid]) { label="Ally"; css="ally"; name=ALLIES[gid]; }
+            else if (NEUTRAL[gid]) { label="Neutral"; css="neutral"; name=NEUTRAL[gid]; }
+            else if (OPPS[gid]) { label="Opposition"; css="opps"; name=OPPS[gid]; }
+            else continue;
+
+            html += `
+            <div class="group-item ${css}">
+                <span class="status-label label-${css}">${label}</span>
+                <span class="group-name">${name}</span>
+                <span class="rank">Rank: ${item.role.name}</span>
+            </div>`;
+        }
+
+        results.innerHTML = html || "No marked affiliations found.";
+
+    } catch {
+        showError("Request failed. Try again later.");
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+document.getElementById("username").addEventListener("keydown", e => {
+    if (e.key === "Enter") checkUser();
+});
+</script>
+
+</body>
+</html>
