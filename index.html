@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Kanagawa-Ikka Affiliations Scanner</title>
+    <link rel="icon" type="image/png" href="https://files.catbox.moe/cmptfa.png">
     <style>
         body { background: #1a1c1e; color: white; font-family: 'Segoe UI', sans-serif; display: flex; justify-content: center; padding: 50px; }
         .card { background: #2c2f33; padding: 25px; border-radius: 15px; width: 420px; border-top: 5px solid #a5f2f3; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
@@ -26,6 +27,45 @@
         button:hover { background: #ffffff; }
         #results { margin-top: 20px; }
 
+        .profile-container {
+            background: #232529;
+            border-radius: 10px;
+            padding: 15px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin-bottom: 20px;
+            border-left: 6px solid #777;
+            transition: 0.3s;
+        }
+        .profile-avatar {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            background: #000;
+            object-fit: cover;
+        }
+        .profile-info { flex: 1; }
+        .profile-display { font-size: 1.1rem; font-weight: bold; color: white; display: block; }
+        .profile-user { font-size: 0.85rem; color: #bbb; display: block; margin-bottom: 5px; }
+        
+        .visit-btn {
+            display: inline-block;
+            text-decoration: none;
+            background: #3b3e44;
+            color: white;
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            transition: 0.2s;
+        }
+        .visit-btn:hover { background: #555; }
+
+        .theme-opps { border-color: #ff4b4b; }
+        .theme-ally { border-color: #43b581; }
+        .theme-neutral { border-color: #00bfff; }
+        .theme-mixed { border-color: #777; } 
+
         .group-item { background: #36393f; padding: 15px; border-radius: 8px; margin-bottom: 12px; }
         .group-name { color: #a5f2f3; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 1px; }
         .rank { color: #ffffff; font-weight: bold; display: block; font-size: 1.1rem; }
@@ -47,7 +87,7 @@
 <div class="card">
     <h2>Kanagawa-Ikka Affiliations Scanner</h2>
 
-    <div class="instructions">
+    <div class="instructions" bis_skin_checked="1">
         <strong>How to use:</strong><br>
         • Enter a <strong>Roblox username</strong> or <strong>UserId</strong><br>
         • Click <strong>Scan Affiliations</strong><br>
@@ -66,41 +106,6 @@
 </div>
 
 <script>
-/* ===== GLOBAL ERROR HANDLER ===== */
-window.onerror = function (message, source, lineno, colno) {
-    const results = document.getElementById("results");
-    if (results) {
-        results.innerHTML = `
-            <p class="error">
-                Code ERROR (${lineno}:${colno}). Contact ArataFuyukawa.
-            </p>
-        `;
-    }
-    return true; // prevent default browser error popup
-};
-
-window.onunhandledrejection = function (event) {
-    const results = document.getElementById("results");
-    if (results) {
-        results.innerHTML = `
-            <p class="error">
-                Code ERROR (PROMISE). Contact ArataFuyukawa.
-            </p>
-        `;
-    }
-};
-</script>
-
-
-<script>
-
-/*
-This app checks Roblox group affiliations using a Cloudflare Worker
-that handles caching, rate limiting, and Roblox API access.
-Do not abuse or commercialize.
-Contact ArataFuyukawa (section12) on discord for questions.
-*/
-
 const ALLIES = { 
     "78749178": "Kanagawa-ikka",
     "35766674": "村山一家 Murayama - Ikka",
@@ -112,7 +117,8 @@ const NEUTRAL = {
     "13835630": "Ikeda-ikka",
     "2727257": "Hydra-Bratva",
     "957196347": "Kozakura-ikka",
-    "953286501": "Tachibana Kai 橘会"
+    "953286501": "Tachibana Kai 橘会",
+    "673851096": "ZERO"
 };
 
 const OPPS = { 
@@ -122,26 +128,17 @@ const OPPS = {
     "12739645": "NOLA"
 };
 
-const PROXY_URL = "https://roblox-proxy.moh-section12.workers.dev";
-const COOLDOWN_MS = 5000;
+const PROXY_URL = "https://roblox-proxy.moh-section12.workers.dev"; 
+const COOLDOWN_MS = 3000;
 let lastScan = 0;
 
 function showError(msg) {
     document.getElementById('results').innerHTML = `<p class="error">${msg}</p>`;
 }
 
-async function safeFetch(url) {
-    const res = await fetch(url);
-    if (!res.ok) {
-        if (res.status === 429) throw { type: "RATE_LIMIT" };
-        throw { type: "HTTP" };
-    }
-    return res.json();
-}
-
 async function checkUser() {
     if (Date.now() - lastScan < COOLDOWN_MS) {
-        return showError("Slow down. Try again in a few seconds.");
+        return showError("Please wait a moment before scanning again.");
     }
     lastScan = Date.now();
 
@@ -152,22 +149,44 @@ async function checkUser() {
     if (!input) return showError("Enter a username or userId.");
 
     btn.disabled = true;
-    results.textContent = "Scanning...";
+    results.innerHTML = "<p style='text-align:center; color:#888;'>Scanning database...</p>";
 
     try {
-        const data = await safeFetch(`${PROXY_URL}/?target=${encodeURIComponent(input)}`);
-        let html = "";
+        const res = await fetch(`${PROXY_URL}/?target=${encodeURIComponent(input)}`);
+        if (!res.ok) {
+            if (res.status === 429) throw new Error("Rate limited. Try again later.");
+            const errJson = await res.json().catch(() => ({}));
+            throw new Error(errJson.error || "User not found or API error.");
+        }
+        
+        const data = await res.json();
+        const user = data.user;
+        const groups = data.groups || [];
 
-        for (const item of data.data || []) {
+        let hasAlly = false;
+        let hasOpp = false;
+        let hasNeutral = false;
+        let groupHtml = "";
+
+        for (const item of groups) {
             const gid = String(item.group.id);
             let label, css, name;
 
-            if (ALLIES[gid]) { label="Ally"; css="ally"; name=ALLIES[gid]; }
-            else if (NEUTRAL[gid]) { label="Neutral"; css="neutral"; name=NEUTRAL[gid]; }
-            else if (OPPS[gid]) { label="Opposition"; css="opps"; name=OPPS[gid]; }
+            if (ALLIES[gid]) { 
+                label="Ally"; css="ally"; name=ALLIES[gid]; 
+                hasAlly = true;
+            }
+            else if (NEUTRAL[gid]) { 
+                label="Neutral"; css="neutral"; name=NEUTRAL[gid]; 
+                hasNeutral = true;
+            }
+            else if (OPPS[gid]) { 
+                label="Opposition"; css="opps"; name=OPPS[gid]; 
+                hasOpp = true;
+            }
             else continue;
 
-            html += `
+            groupHtml += `
             <div class="group-item ${css}">
                 <span class="status-label label-${css}">${label}</span>
                 <span class="group-name">${name}</span>
@@ -175,10 +194,29 @@ async function checkUser() {
             </div>`;
         }
 
-        results.innerHTML = html || "No marked affiliations found.";
+        let themeClass = "theme-mixed";
+        
+        if (hasOpp && !hasAlly && !hasNeutral) themeClass = "theme-opps"; // Red
+        else if (hasAlly && !hasOpp && !hasNeutral) themeClass = "theme-ally"; // Green
+        else if (hasNeutral && !hasAlly && !hasOpp) themeClass = "theme-neutral"; // Blue
+        else if (!hasOpp && !hasAlly && !hasNeutral) themeClass = "theme-mixed"; // Gray
 
-    } catch {
-        showError("Request failed. Try again later.");
+        if (groupHtml === "") groupHtml = "<p style='text-align:center; color:#888;'>No tracked affiliations found.</p>";
+
+        results.innerHTML = `
+            <div class="profile-container ${themeClass}">
+                <img src="${user.avatarUrl}" alt="Avatar" class="profile-avatar">
+                <div class="profile-info">
+                    <span class="profile-display">${user.displayName}</span>
+                    <span class="profile-user">@${user.name}</span>
+                    <a href="https://www.roblox.com/users/${user.id}/profile" target="_blank" class="visit-btn">Visit Profile ↗</a>
+                </div>
+            </div>
+            ${groupHtml}
+        `;
+
+    } catch (e) {
+        showError(e.message);
     } finally {
         btn.disabled = false;
     }
